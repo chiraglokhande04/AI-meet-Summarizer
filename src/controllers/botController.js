@@ -7,6 +7,7 @@ import Meeting from "../models/meeting.models.js";
 import { createClient } from "@deepgram/sdk";
 import { Readable } from "stream";
 import env from "../utility/env.js";
+import SYSTEM_PROMPT from "../utility/prompt.js"
 
 dotenv.config();
 const { WaveFile } = pkg;
@@ -54,14 +55,7 @@ async function generateMeetingAnalysis(transcriptText) {
       messages: [
         {
           role: "system",
-          content: `You are a meeting analyst. 
-          TRANSCRIPT LABELS: "Speaker 0", "Speaker 1".
-          TASK 1: Identity Matching. If Speaker 0 says "I am Aditya", label them Aditya.
-          TASK 2: JSON Output:
-             - "summary": concise summary.
-             - "actionItems": [{ "task": string, "assignee": string, "deadline": string }].
-             - "sentiment": { "positive": int, "neutral": int, "negative": int }.
-          Output strictly JSON.`,
+          content: SYSTEM_PROMPT,
         },
         { role: "user", content: transcriptText },
       ],
@@ -161,7 +155,7 @@ async function launchBot(url, userId) {
 
     try {
       await browser.close();
-    } catch (e) {}
+    } catch (e) { }
 
     if (allAudioChunks.length > 0) {
       try {
@@ -225,15 +219,22 @@ async function launchBot(url, userId) {
           intelligencePromise,
         ]);
 
+        const analysis = intelligenceResult.analysis;
         // 5. Save to DB
         console.log(`[DB] 💾 Saving to database...`);
         await Meeting.create({
           user: userId,
           title: `Meeting ${meetingId}`,
-          transcript: intelligenceResult.text || "No transcript generated.",
-          summary: intelligenceResult.analysis.summary,
-          actionItems: intelligenceResult.analysis.actionItems,
-          sentiment: intelligenceResult.analysis.sentiment,
+          transcript: intelligenceResult.text,
+
+          executiveSummary: analysis.executiveSummary,
+          detailedSummary: analysis.detailedSummary,
+
+          minutesOfMeeting: analysis.minutesOfMeeting,
+
+          actionItems: analysis.minutesOfMeeting?.actionItems || [],
+          sentiment: analysis.sentiment,
+
           duration: "Unknown",
           audioSource: audioResult.secure_url,
         });
@@ -266,12 +267,12 @@ async function launchBot(url, userId) {
         timeout: 8000,
       });
       await camBtn.click();
-    } catch (e) {}
+    } catch (e) { }
 
     try {
       await page.waitForSelector('input[type="text"]', { timeout: 5000 });
       await page.type('input[type="text"]', "AI Note Taker", { delay: 100 });
-    } catch (e) {}
+    } catch (e) { }
 
     await page.evaluate(() => {
       const btns = [...document.querySelectorAll("button")];
